@@ -27,28 +27,38 @@ public class UserProfileService {
     }
 
     public void uploadUserProfileImage(UUID userProfileId, MultipartFile file) throws Exception {
+        // 1. Check if file is not empty
+        isFileEmpty(file);
+        // 2. Check if file is an image
+        isAnImage(file);
 
-        try {
-            // 1. Check if file is not empty
-            isFileEmpty(file);
-            // 2. Check if file is an image
-            isAnImage(file);
+        // 3. Check if user exists
+        UserProfile userProfile = getUserProfileDataOrThrow(userProfileId);
+        // 4. Create MetaData
+        Map<String, String> metaData = extractMetaData(file);
 
-            // 3. Check if user exists
-            UserProfile userProfile = getUserProfileDataOrThrow(userProfileId);
-            // 4. Create MetaData
-            Map<String, String> metaData = extractMetaData(file);
+        // 5. Upload the file to S3 and update DB
+        String path = String.format("%s/%s", BucketName.PROFILE_IMAGE.getBucketName(), userProfileId);
+        String fileName = String.format("%s-%s", file.getOriginalFilename(), UUID.randomUUID());
 
-            // 5. Upload the file to S3 and update DB
-            String path = String.format("%s/%s", BucketName.PROFILE_IMAGE.getBucketName(), userProfileId);
-            String fileName = String.format("%s-%s", file.getOriginalFilename(), UUID.randomUUID());
+        fileStore.save(path, fileName, Optional.of(metaData), file.getInputStream());
+        userProfile.setUserProfileImageLink(fileName);
 
-            fileStore.save(path, fileName, Optional.of(metaData), file.getInputStream());
-            userProfile.setUserProfileImageLink(fileName);
+    }
 
-        } catch (Exception e) {
-            throw new Exception(e);
+
+    public byte[] downloadProfileImage(UUID userProfileId) {
+        // 1. Check if the user exists
+        UserProfile userProfile = getUserProfileDataOrThrow(userProfileId);
+
+        // 2. Form the usr to fetch data from s3
+        String path = String.format("%s/%s", BucketName.PROFILE_IMAGE.getBucketName(), userProfileId);
+        String fileName = userProfile.getUserProfileImageLink();
+
+        if(fileName != null){
+            return fileStore.download(path, fileName);
         }
+        throw new IllegalStateException("No file to download");
     }
 
     private void isAnImage(MultipartFile file) {
@@ -77,4 +87,5 @@ public class UserProfileService {
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException(String.format("User not found %s", userProfileId)));
     }
+
 }
